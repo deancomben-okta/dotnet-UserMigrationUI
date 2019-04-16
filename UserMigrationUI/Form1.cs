@@ -14,6 +14,8 @@ using Newtonsoft.Json.Linq;
 using Okta.Sdk;
 using Okta.Sdk.Configuration;
 using System.Configuration;
+using System.IO;
+using Newtonsoft.Json;
 
 namespace UserMigrationUI
 {
@@ -33,9 +35,8 @@ namespace UserMigrationUI
             this.logger.LogDebug("Starting Logging");
         }
 
-        private void start_btn_Click(object sender, EventArgs e)
+        private void TestDataStart_btn_Click(object sender, EventArgs e)
         {
-
             //createUsers();
 
             BlockingCollection<JObject> blockingUserList = BlockingUserList(Convert.ToInt32(numericUpDown1.Value));
@@ -46,7 +47,32 @@ namespace UserMigrationUI
             {
                 Task createUserTask = Task.Run(() => NonBlockingCreateUser(blockingUserList));
             }
+        }
 
+        private void JsonFileStart_btn_Click(object sender, EventArgs e)
+        {
+            if (jsonFilename_textBox.Text == "")
+            {
+                MessageBox.Show("JSON file must be specified.");
+            }
+            else
+            {
+                BlockingCollection<JObject> blockingUserList = new BlockingCollection<JObject>();
+
+                using (StreamReader streamReader = new StreamReader(jsonFilename_textBox.Text))
+                {
+                    string json = streamReader.ReadToEnd();
+                    dynamic userArray = JsonConvert.DeserializeObject(json);
+                    blockingUserList = BlockingUserListFromJSONFile(userArray);
+                }
+
+                int threads = Convert.ToInt32(ConfigurationManager.AppSettings.Get("Threads"));
+
+                for (int i = 0; i < threads; i++)
+                {
+                    Task createUserTask = Task.Run(() => NonBlockingCreateUser(blockingUserList));
+                }
+            }
         }
 
         private async void NonBlockingCreateUser(BlockingCollection<JObject> bc)
@@ -97,7 +123,7 @@ namespace UserMigrationUI
                             Uri = $"/api/v1/users",
                             QueryParameters = new Dictionary<string, object>()
                             {
-                                ["activate"] = false,
+                                ["activate"] = true,
                             },
                             Payload = user
                         });
@@ -312,7 +338,18 @@ namespace UserMigrationUI
             return users;
         }
 
-        private async void delete_btn_Click(object sender, EventArgs e)
+        static BlockingCollection<JObject> BlockingUserListFromJSONFile(dynamic userArray)
+        {
+            BlockingCollection<JObject> users = new BlockingCollection<JObject>();
+            foreach (var user in userArray)
+            {
+                users.Add(user);
+            }
+
+            return users;
+        }
+
+        private void TestDataDelete_btn_Click(object sender, EventArgs e)
         {
             //DeleteUsers();
 
@@ -324,7 +361,32 @@ namespace UserMigrationUI
             {
                 Task deleteUsersTask = Task.Run(() => NonBlockingDeleteUser(blockingUserList));
             }
+        }
 
+        private void JsonFileDelete_btn_Click(object sender, EventArgs e)
+        {
+            if (jsonFilename_textBox.Text == "")
+            {
+                MessageBox.Show("JSON file must be specified.");
+            }
+            else
+            {
+                BlockingCollection<JObject> blockingUserList = new BlockingCollection<JObject>();
+
+                using (StreamReader streamReader = new StreamReader(jsonFilename_textBox.Text))
+                {
+                    string json = streamReader.ReadToEnd();
+                    dynamic userArray = JsonConvert.DeserializeObject(json);
+                    blockingUserList = BlockingUserListFromJSONFile(userArray);
+                }
+
+                int threads = Convert.ToInt32(ConfigurationManager.AppSettings.Get("Threads"));
+
+                for (int i = 0; i < threads; i++)
+                {
+                    Task deleteUsersTask = Task.Run(() => NonBlockingDeleteUser(blockingUserList));
+                }
+            }
         }
 
         private async void DeleteUsers()
@@ -375,9 +437,13 @@ namespace UserMigrationUI
 
         }
 
-        private void numericUpDown1_ValueChanged(object sender, EventArgs e)
+        private void DisplayOpenFileDialog_btn_Click(object sender, EventArgs e)
         {
-            //
+            if (openFileDialog1.ShowDialog() == DialogResult.OK)
+            {
+                jsonFilename_textBox.Text = openFileDialog1.FileName;
+            }
         }
+
     }
 }

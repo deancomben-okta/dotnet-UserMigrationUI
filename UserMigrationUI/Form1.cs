@@ -74,37 +74,7 @@ namespace UserMigrationUI
                 bulkLoadTasks.Add(bulkLoadTask);
             }
 
-            try
-            {
-                Task.WaitAll(bulkLoadTasks.ToArray());
-            }
-            catch (AggregateException e)
-            {
-                Console.WriteLine("\nAggregateException thrown with the following inner exceptions:");
-                txtBoxFailure.AppendText($"AggregateException thrown with the following inner exceptions:{Environment.NewLine}");
-
-                // Display information about each exception. 
-                foreach (var v in e.InnerExceptions)
-                {
-                    if (v is TaskCanceledException)
-                    {
-                        Console.WriteLine("   TaskCanceledException: Task {0}",
-                                          ((TaskCanceledException)v).Task.Id);
-                        txtBoxFailure.AppendText($"   TaskCanceledException: Task {((TaskCanceledException)v).Task.Id}{Environment.NewLine}");
-                    }
-                    else
-                    {
-                        Console.WriteLine("   Exception: {0}", v.GetType().Name);
-                        txtBoxFailure.AppendText($"   Exception: {v.GetType().Name}{Environment.NewLine}");
-                    }
-                }
-                Console.WriteLine();
-            }
-            finally
-            {
-                tokenSource.Dispose();
-                resetButtonsAndStopTimer();
-            }           
+            Task.WhenAny(bulkLoadTasks.ToArray());
         }
 
         private void JsonFileStart_btn_Click(object sender, EventArgs e)
@@ -151,37 +121,7 @@ namespace UserMigrationUI
                     bulkLoadTasks.Add(bulkLoadTask);
                 }
 
-                try
-                {
-                    Task.WaitAll(bulkLoadTasks.ToArray());
-                }
-                catch (AggregateException e)
-                {
-                    Console.WriteLine("\nAggregateException thrown with the following inner exceptions:");
-                    txtBoxFailure.AppendText($"AggregateException thrown with the following inner exceptions:{Environment.NewLine}");
-
-                    // Display information about each exception. 
-                    foreach (var v in e.InnerExceptions)
-                    {
-                        if (v is TaskCanceledException)
-                        {
-                            Console.WriteLine("   TaskCanceledException: Task {0}",
-                                              ((TaskCanceledException)v).Task.Id);
-                            txtBoxFailure.AppendText($"   TaskCanceledException: Task {((TaskCanceledException)v).Task.Id}{Environment.NewLine}");
-                        }
-                        else
-                        {
-                            Console.WriteLine("   Exception: {0}", v.GetType().Name);
-                            txtBoxFailure.AppendText($"   Exception: {v.GetType().Name}{Environment.NewLine}");
-                        }
-                    }
-                    Console.WriteLine();
-                }
-                finally
-                {
-                    tokenSource.Dispose();
-                    resetButtonsAndStopTimer();
-                }
+                Task.WhenAny(bulkLoadTasks.ToArray());
             }
         }
         private void TestDataDelete_btn_Click(object sender, EventArgs e)
@@ -215,37 +155,7 @@ namespace UserMigrationUI
                 bulkLoadTasks.Add(bulkLoadTask);
             }
 
-            try
-            {
-                Task.WaitAll(bulkLoadTasks.ToArray());
-            }
-            catch (AggregateException e)
-            {
-                Console.WriteLine("\nAggregateException thrown with the following inner exceptions:");
-                txtBoxFailure.AppendText($"AggregateException thrown with the following inner exceptions:{Environment.NewLine}");
-
-                // Display information about each exception. 
-                foreach (var v in e.InnerExceptions)
-                {
-                    if (v is TaskCanceledException)
-                    {
-                        Console.WriteLine("   TaskCanceledException: Task {0}",
-                                          ((TaskCanceledException)v).Task.Id);
-                        txtBoxFailure.AppendText($"   TaskCanceledException: Task {((TaskCanceledException)v).Task.Id}{Environment.NewLine}");
-                    }
-                    else
-                    {
-                        Console.WriteLine("   Exception: {0}", v.GetType().Name);
-                        txtBoxFailure.AppendText($"   Exception: {v.GetType().Name}{Environment.NewLine}");
-                    }
-                }
-                Console.WriteLine();
-            }
-            finally
-            {
-                tokenSource.Dispose();
-                resetButtonsAndStopTimer();
-            }
+            Task.WhenAny(bulkLoadTasks.ToArray());
         }
 
         private void JsonFileDelete_btn_Click(object sender, EventArgs e)
@@ -292,37 +202,7 @@ namespace UserMigrationUI
                     bulkLoadTasks.Add(bulkLoadTask);
                 }
 
-                try
-                {
-                    Task.WaitAll(bulkLoadTasks.ToArray());
-                }
-                catch (AggregateException e)
-                {
-                    Console.WriteLine("\nAggregateException thrown with the following inner exceptions:");
-                    txtBoxFailure.AppendText($"AggregateException thrown with the following inner exceptions:{Environment.NewLine}");
-
-                    // Display information about each exception. 
-                    foreach (var v in e.InnerExceptions)
-                    {
-                        if (v is TaskCanceledException)
-                        {
-                            Console.WriteLine("   TaskCanceledException: Task {0}",
-                                              ((TaskCanceledException)v).Task.Id);
-                            txtBoxFailure.AppendText($"   TaskCanceledException: Task {((TaskCanceledException)v).Task.Id}{Environment.NewLine}");
-                        }
-                        else
-                        {
-                            Console.WriteLine("   Exception: {0}", v.GetType().Name);
-                            txtBoxFailure.AppendText($"   Exception: {v.GetType().Name}{Environment.NewLine}");
-                        }
-                    }
-                    Console.WriteLine();
-                }
-                finally
-                {
-                    tokenSource.Dispose();
-                    resetButtonsAndStopTimer();
-                }
+                Task.WhenAny(bulkLoadTasks.ToArray());
             }
         }
 
@@ -555,6 +435,7 @@ namespace UserMigrationUI
             }
 
             userCount = count;
+            users.CompleteAdding();
             return users;
         }
 
@@ -568,6 +449,7 @@ namespace UserMigrationUI
                 userCount++;
             }
 
+            users.CompleteAdding();
             return users;
         }
 
@@ -582,11 +464,15 @@ namespace UserMigrationUI
         private void TestDataStop_btn_Click(object sender, EventArgs e)
         {
             tokenSource.Cancel();
+            tokenSource.Dispose();
+            resetButtonsAndStopTimer();
         }
 
         private void JsonFileStop_btn_Click(object sender, EventArgs e)
         {
             tokenSource.Cancel();
+            tokenSource.Dispose();
+            resetButtonsAndStopTimer();
         }
 
         private void Form1_Load(object sender, EventArgs e)
@@ -604,19 +490,42 @@ namespace UserMigrationUI
         private void updateProgress()
         {
             int localUserProcessedCount = Interlocked.CompareExchange(ref userProcessedCount, 0, 0);
-            progressBar1.Value = localUserProcessedCount;
+            if (localUserProcessedCount <= userCount)
+            {
+                progressBar1.Value = localUserProcessedCount;
 
-            double numberOfSecondsElapsed = ((TimeSpan)(DateTime.Now - startTime)).TotalSeconds;
-            double usersPerSecond = localUserProcessedCount / numberOfSecondsElapsed;
-            double usersPerMinute = (numberOfSecondsElapsed < 60) ? (usersPerSecond * 60) : localUserProcessedCount / (numberOfSecondsElapsed / 60);
+                double numberOfSecondsElapsed = ((TimeSpan)(DateTime.Now - startTime)).TotalSeconds;
+                double usersPerSecond = localUserProcessedCount / numberOfSecondsElapsed;
+                double usersPerMinute = (numberOfSecondsElapsed < 60) ? (usersPerSecond * 60) : localUserProcessedCount / (numberOfSecondsElapsed / 60);
 
-            progress_Lbl.Text = $"Processed {localUserProcessedCount} / {userCount} @ {usersPerSecond:N2} / sec ({usersPerMinute:N2} / min)";
+                progress_Lbl.Text = $"Processed {localUserProcessedCount} / {userCount} @ {usersPerSecond:N2} / sec ({usersPerMinute:N2} / min)";
 
-            string elapsed = string.Format("{0:00}:{1:00}:{2:00}", numberOfSecondsElapsed / 3600, (numberOfSecondsElapsed / 60) % 60, numberOfSecondsElapsed % 60);
-            double etcSeconds = (userCount - localUserProcessedCount) / usersPerSecond;
-            string etc = string.Format("{0:00}:{1:00}:{2:00}", etcSeconds / 3600, (etcSeconds / 60) % 60, etcSeconds % 60);
+                string elapsed = string.Format("{0:00}:{1:00}:{2:00}", numberOfSecondsElapsed / 3600, (numberOfSecondsElapsed / 60) % 60, numberOfSecondsElapsed % 60);
+                double etcSeconds = (userCount - localUserProcessedCount) / usersPerSecond;
+                string etc = string.Format("{0:00}:{1:00}:{2:00}", etcSeconds / 3600, (etcSeconds / 60) % 60, etcSeconds % 60);
 
-            etc_Lbl.Text = $"Elapsed {elapsed}, ETC {etc}";
+                etc_Lbl.Text = $"Elapsed {elapsed}, ETC {etc}";
+            }
+
+            if (localUserProcessedCount >= userCount)
+            {
+                this.Invoke((MethodInvoker)delegate ()
+                {
+                    statusTimer.Stop();
+
+                    userProcessedCount = 0;
+
+                    Console.WriteLine(progress_Lbl.Text);
+                    txtBoxSuccess.AppendText($"{progress_Lbl.Text} {Environment.NewLine}");
+
+                    testDataStart_btn.Enabled = true;
+                    testDataDelete_btn.Enabled = true;
+                    jsonFileStart_btn.Enabled = true;
+                    jsonFileDelete_btn.Enabled = true;
+                    jsonFileStop_btn.Enabled = false;
+                    testDataStop_btn.Enabled = false;
+                });
+            }
         }
 
         private void resetButtonsAndStopTimer()
@@ -628,9 +537,9 @@ namespace UserMigrationUI
             Console.WriteLine(progress_Lbl.Text);
             txtBoxSuccess.AppendText($"{progress_Lbl.Text} {Environment.NewLine}");
 
-            progressBar1.Value = 0;
-            progress_Lbl.Text = "";
-            etc_Lbl.Text = "";
+            //progressBar1.Value = 0;
+            //progress_Lbl.Text = "";
+            //etc_Lbl.Text = "";
 
             testDataStart_btn.Enabled = true;
             testDataDelete_btn.Enabled = true;

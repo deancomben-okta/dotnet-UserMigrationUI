@@ -1,11 +1,6 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
-using System.Drawing;
-using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -14,6 +9,8 @@ using Newtonsoft.Json.Linq;
 using Okta.Sdk;
 using Okta.Sdk.Configuration;
 using System.Configuration;
+using System.IO;
+using Newtonsoft.Json;
 
 namespace UserMigrationUI
 {
@@ -21,6 +18,19 @@ namespace UserMigrationUI
     {
         private List<JObject> userlist;
         private ILogger logger;
+
+        private string oktaOrgURL = ConfigurationManager.AppSettings.Get("OktaOrgURL");
+        private string oktaAPIKey = ConfigurationManager.AppSettings.Get("OktaAPIKey");
+        private int threads = Convert.ToInt32(ConfigurationManager.AppSettings.Get("Threads"));
+
+        private static int userCount = 0;
+        private int userProcessedCount = 0;
+        private DateTime startTime;
+        private System.Windows.Forms.Timer statusTimer;
+
+        private CancellationTokenSource tokenSource;
+        private CancellationToken token;
+        private ConcurrentBag<Task> bulkLoadTasks;
 
         public Form1()
         {
@@ -33,31 +43,178 @@ namespace UserMigrationUI
             this.logger.LogDebug("Starting Logging");
         }
 
-        private void start_btn_Click(object sender, EventArgs e)
+        private void TestDataStart_btn_Click(object sender, EventArgs e)
         {
-
-            //createUsers();
-
             BlockingCollection<JObject> blockingUserList = BlockingUserList(Convert.ToInt32(numericUpDown1.Value));
+            progressBar1.Maximum = userCount;
 
-            int threads = Convert.ToInt32(ConfigurationManager.AppSettings.Get("Threads"));
+            testDataStart_btn.Enabled = false;
+            testDataDelete_btn.Enabled = false;
+            jsonFileStart_btn.Enabled = false;
+            jsonFileDelete_btn.Enabled = false;
+            jsonFileStop_btn.Enabled = false;
+            testDataStop_btn.Enabled = true;
 
+            txtBoxSuccess.Clear();
+            txtBoxFailure.Clear();
+
+            startTime = DateTime.Now;
+            statusTimer.Start();
+
+            oktaAPIKey = oktaAPIKey_txtBox.Text;
+            oktaOrgURL = oktaOrgURL_txtBox.Text;
+            threads = (int) numThreads_upDown.Value;
+
+            tokenSource = new CancellationTokenSource();
+            token = tokenSource.Token;
+            bulkLoadTasks = new ConcurrentBag<Task>();
             for (int i = 0; i < threads; i++)
             {
-                Task createUserTask = Task.Run(() => NonBlockingCreateUser(blockingUserList));
+                Task bulkLoadTask = Task.Factory.StartNew( () => NonBlockingCreateUser(blockingUserList, token), token);
+                bulkLoadTasks.Add(bulkLoadTask);
             }
 
+            Task.WhenAny(bulkLoadTasks.ToArray());
         }
 
-        private async void NonBlockingCreateUser(BlockingCollection<JObject> bc)
+        private void JsonFileStart_btn_Click(object sender, EventArgs e)
+        {
+            if (jsonFilename_textBox.Text == "")
+            {
+                MessageBox.Show("JSON file must be specified.");
+            }
+            else
+            {
+                BlockingCollection<JObject> blockingUserList = new BlockingCollection<JObject>();
+
+                testDataStart_btn.Enabled = false;
+                testDataDelete_btn.Enabled = false;
+                jsonFileStart_btn.Enabled = false;
+                jsonFileDelete_btn.Enabled = false;
+                testDataStop_btn.Enabled = false;
+                jsonFileStop_btn.Enabled = true;
+
+                using (StreamReader streamReader = new StreamReader(jsonFilename_textBox.Text))
+                {
+                    string json = streamReader.ReadToEnd();
+                    dynamic userArray = JsonConvert.DeserializeObject(json);
+                    blockingUserList = BlockingUserListFromJSONFile(userArray);
+                }
+                progressBar1.Maximum = userCount;
+
+                txtBoxSuccess.Clear();
+                txtBoxFailure.Clear();
+
+                startTime = DateTime.Now;
+                statusTimer.Start();
+
+                oktaAPIKey = oktaAPIKey_txtBox.Text;
+                oktaOrgURL = oktaOrgURL_txtBox.Text;
+                threads = (int) numThreads_upDown.Value;
+
+                tokenSource = new CancellationTokenSource();
+                token = tokenSource.Token;
+                bulkLoadTasks = new ConcurrentBag<Task>();
+                for (int i = 0; i < threads; i++)
+                {
+                    Task bulkLoadTask = Task.Factory.StartNew(() => NonBlockingCreateUser(blockingUserList, token), token);
+                    bulkLoadTasks.Add(bulkLoadTask);
+                }
+
+                Task.WhenAny(bulkLoadTasks.ToArray());
+            }
+        }
+        private void TestDataDelete_btn_Click(object sender, EventArgs e)
+        {
+            BlockingCollection<JObject> blockingUserList = BlockingUserList(Convert.ToInt32(numericUpDown1.Value));
+            progressBar1.Maximum = userCount;
+
+            testDataStart_btn.Enabled = false;
+            testDataDelete_btn.Enabled = false;
+            jsonFileStart_btn.Enabled = false;
+            jsonFileDelete_btn.Enabled = false;
+            jsonFileStop_btn.Enabled = false;
+            testDataStop_btn.Enabled = true;
+
+            txtBoxSuccess.Clear();
+            txtBoxFailure.Clear();
+
+            startTime = DateTime.Now;
+            statusTimer.Start();
+
+            oktaAPIKey = oktaAPIKey_txtBox.Text;
+            oktaOrgURL = oktaOrgURL_txtBox.Text;
+            threads = (int) numThreads_upDown.Value;
+
+            tokenSource = new CancellationTokenSource();
+            token = tokenSource.Token;
+            bulkLoadTasks = new ConcurrentBag<Task>();
+            for (int i = 0; i < threads; i++)
+            {
+                Task bulkLoadTask = Task.Factory.StartNew(() => NonBlockingDeleteUser(blockingUserList, token), token);
+                bulkLoadTasks.Add(bulkLoadTask);
+            }
+
+            Task.WhenAny(bulkLoadTasks.ToArray());
+        }
+
+        private void JsonFileDelete_btn_Click(object sender, EventArgs e)
+        {
+            if (jsonFilename_textBox.Text == "")
+            {
+                MessageBox.Show("JSON file must be specified.");
+            }
+            else
+            {
+                BlockingCollection<JObject> blockingUserList = new BlockingCollection<JObject>();
+
+                testDataStart_btn.Enabled = false;
+                testDataDelete_btn.Enabled = false;
+                jsonFileStart_btn.Enabled = false;
+                jsonFileDelete_btn.Enabled = false;
+                testDataStop_btn.Enabled = false;
+                jsonFileStop_btn.Enabled = true;
+
+                using (StreamReader streamReader = new StreamReader(jsonFilename_textBox.Text))
+                {
+                    string json = streamReader.ReadToEnd();
+                    dynamic userArray = JsonConvert.DeserializeObject(json);
+                    blockingUserList = BlockingUserListFromJSONFile(userArray);
+                }
+                progressBar1.Maximum = userCount;
+
+                txtBoxSuccess.Clear();
+                txtBoxFailure.Clear();
+
+                startTime = DateTime.Now;
+                statusTimer.Start();
+
+                oktaAPIKey = oktaAPIKey_txtBox.Text;
+                oktaOrgURL = oktaOrgURL_txtBox.Text;
+                threads = (int) numThreads_upDown.Value;
+
+                tokenSource = new CancellationTokenSource();
+                token = tokenSource.Token;
+                bulkLoadTasks = new ConcurrentBag<Task>();
+                for (int i = 0; i < threads; i++)
+                {
+                    Task bulkLoadTask = Task.Factory.StartNew(() => NonBlockingDeleteUser(blockingUserList, token), token);
+                    bulkLoadTasks.Add(bulkLoadTask);
+                }
+
+                Task.WhenAny(bulkLoadTasks.ToArray());
+            }
+        }
+
+        private async void NonBlockingCreateUser(BlockingCollection<JObject> bc, CancellationToken ct)
         {
             var threadID = Thread.CurrentThread.ManagedThreadId;
-            while (!bc.IsCompleted)
+            while (!bc.IsCompleted && !ct.IsCancellationRequested)
             {
                 var configuration = new Okta.Sdk.Configuration.OktaClientConfiguration
                 {
-                    OktaDomain = ConfigurationManager.AppSettings.Get("OktaOrgURL"),
-                    Token = ConfigurationManager.AppSettings.Get("OktaAPIKey"),
+                    OktaDomain = oktaOrgURL,
+                    Token = oktaAPIKey,
                     MaxRetries = 10,
                     ConnectionTimeout = 5,
                     RequestTimeout = 120
@@ -87,17 +244,21 @@ namespace UserMigrationUI
                     //Console.WriteLine($"ThreadID: {threadID}, User: {uid}");
                     this.Invoke((MethodInvoker)delegate ()
                     {
-                        txtBox.AppendText($"ThreadID: {threadID}, Request: CreateUser, User: {uid}{Environment.NewLine}");
+                        txtBoxSuccess.AppendText($"ThreadID: {threadID}, Request: CreateUser, User: {uid}{Environment.NewLine}");
                     });
 
                     try
                     {
+                        JObject credentials = (JObject) user["credentials"];
+                        JObject password = (JObject) credentials["password"];
+                        password["value"] = "a@Z1" + Guid.NewGuid().ToString().Substring(0, 6);
+
                         var result = await client.PostAsync<User>(new HttpRequest
                         {
                             Uri = $"/api/v1/users",
                             QueryParameters = new Dictionary<string, object>()
                             {
-                                ["activate"] = false,
+                                ["activate"] = true,
                             },
                             Payload = user
                         });
@@ -106,36 +267,46 @@ namespace UserMigrationUI
                         //Console.WriteLine($"ThreadID: {threadID}, User: {uid}, Status: {result.Status}");
                         this.Invoke((MethodInvoker)delegate ()
                         {
-                            txtBox.AppendText($"ThreadID: {threadID}, Response: CreateUser, User: {uid}, Status: {result.Status}{Environment.NewLine}");
+                            if(result.Status == "ACTIVE")
+                            {
+                                txtBoxSuccess.AppendText($"ThreadID: {threadID}, Login: {uid}, Response: CreateUser, User: {uid}, Status: {result.Status}{Environment.NewLine}");
+                            } else
+                            {
+                                txtBoxFailure.AppendText($"ThreadID: {threadID}, Login: {uid}, Response: CreateUser, User: {uid}, Status: {result.Status}{Environment.NewLine}");
+                            }
                         });
                     }
                     catch (Exception ex)
                     {
                         Console.WriteLine(ex.Message);
+                        threadID = Thread.CurrentThread.ManagedThreadId;
                         this.Invoke((MethodInvoker)delegate ()
                         {
-                            txtBox.AppendText(ex.Message + Environment.NewLine);
+                            txtBoxFailure.AppendText($"ThreadID: { threadID}, Login: { uid}, Exception: {ex.Message}{Environment.NewLine}");
+
                         });
                     }
+
+                    Interlocked.Increment(ref userProcessedCount);
                 }
                 //Thread.SpinWait(5000000);
             }
             threadID = Thread.CurrentThread.ManagedThreadId;
             this.Invoke((MethodInvoker)delegate ()
             {
-                txtBox.AppendText($"ThreadID: {threadID}, Processing Done!");
+                txtBoxSuccess.AppendText($"ThreadID: {threadID}, Processing Done!{Environment.NewLine}");
             });
         }
 
-        private async void NonBlockingDeleteUser(BlockingCollection<JObject> bc)
+        private async void NonBlockingDeleteUser(BlockingCollection<JObject> bc, CancellationToken ct)
         {
             var threadID = Thread.CurrentThread.ManagedThreadId;
-            while (!bc.IsCompleted)
+            while (!bc.IsCompleted && !ct.IsCancellationRequested)
             {
                 var configuration = new Okta.Sdk.Configuration.OktaClientConfiguration
                 {
-                    OktaDomain = ConfigurationManager.AppSettings.Get("OktaOrgURL"),
-                    Token = ConfigurationManager.AppSettings.Get("OktaAPIKey"),
+                    OktaDomain = oktaOrgURL,
+                    Token = oktaAPIKey,
                     MaxRetries = 10,
                     ConnectionTimeout = 5,
                     RequestTimeout = 120
@@ -165,7 +336,7 @@ namespace UserMigrationUI
                     //Console.WriteLine($"ThreadID: {threadID}, User: {uid}");
                     this.Invoke((MethodInvoker)delegate ()
                     {
-                        txtBox.AppendText($"ThreadID: {threadID}, Request: DeleteUser, User: {uid}{Environment.NewLine}");
+                        txtBoxSuccess.AppendText($"ThreadID: {threadID}, Login: {uid}, Request: DeleteUser, User: {uid}{Environment.NewLine}");
                     });
 
                     try
@@ -179,77 +350,31 @@ namespace UserMigrationUI
                         // Then delete the user
                         await u.DeactivateOrDeleteAsync();
 
-
-
                         threadID = Thread.CurrentThread.ManagedThreadId;
                         this.Invoke((MethodInvoker)delegate ()
                         {
-                            txtBox.AppendText($"ThreadID: {threadID}, Response: DeleteUser, User: {uid}, Status: DELETED{Environment.NewLine}");
+                            txtBoxSuccess.AppendText($"ThreadID: {threadID}, Login: {uid}, Response: DeleteUser, User: {uid}, Status: DELETED{Environment.NewLine}");
                         });
                     }
                     catch (Exception ex)
                     {
                         Console.WriteLine(ex.Message);
+                        threadID = Thread.CurrentThread.ManagedThreadId;
                         this.Invoke((MethodInvoker)delegate ()
                         {
-                            txtBox.AppendText(ex.Message + Environment.NewLine);
+                            txtBoxFailure.AppendText($"ThreadID: { threadID}, Login: { uid}, Exception: {ex.Message}{Environment.NewLine}");
                         });
                     }
+
+                    Interlocked.Increment(ref userProcessedCount);
                 }
                 //Thread.SpinWait(5000000);
             }
             threadID = Thread.CurrentThread.ManagedThreadId;
             this.Invoke((MethodInvoker)delegate ()
             {
-                txtBox.AppendText($"ThreadID: {threadID}, Processing Done!");
-            });
-        }
-
-        private async void createUsers()
-        {
-            // Get lots of users
-            userlist = UserList(Convert.ToInt32(numericUpDown1.Value));
-
-            var configuration = new Okta.Sdk.Configuration.OktaClientConfiguration
-            {
-                OktaDomain = ConfigurationManager.AppSettings.Get("OktaOrgURL"),
-                Token = ConfigurationManager.AppSettings.Get("OktaAPIKey"),
-                MaxRetries = 10,
-                ConnectionTimeout = 5,
-                RequestTimeout = 120
-            };
-            //var client = new OktaClient(config);
-
-            var httpClient = new System.Net.Http.HttpClient();
-            var maxRetries = configuration.MaxRetries ?? OktaClientConfiguration.DefaultMaxRetries;
-            var requestTimeout = configuration.RequestTimeout ?? OktaClientConfiguration.DefaultRequestTimeout;
-
-            var client = new OktaClient(apiClientConfiguration: configuration, httpClient: httpClient, logger: this.logger, retryStrategy: new DefaultRetryStrategy(maxRetries, requestTimeout));
-
-            foreach (var user in userlist)
-            {
-
-                try
-                {
-                    var result = await client.PostAsync<User>(new HttpRequest
-                    {
-                        Uri = $"/api/v1/users",
-                        QueryParameters = new Dictionary<string, object>()
-                        {
-                            ["activate"] = false,
-                        },
-                        Payload = user
-                    });
-
-                    Console.WriteLine($"Login: {result.Profile.Login}, Status: {result.Status}");
-                    txtBox.AppendText($"Login: {result.Profile.Login}, Status: {result.Status}{Environment.NewLine}");
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine(ex.Message);
-                    txtBox.AppendText(ex.Message + Environment.NewLine);
-                }
-            } //end foreach
+                txtBoxSuccess.AppendText($"ThreadID: {threadID}, Processing Done!{Environment.NewLine}");
+            });         
         }
 
         static List<JObject> UserList(int count)
@@ -309,75 +434,128 @@ namespace UserMigrationUI
                 users.Add(user);
             }
 
+            userCount = count;
+            users.CompleteAdding();
             return users;
         }
 
-        private async void delete_btn_Click(object sender, EventArgs e)
+        static BlockingCollection<JObject> BlockingUserListFromJSONFile(dynamic userArray)
         {
-            //DeleteUsers();
-
-            BlockingCollection<JObject> blockingUserList = BlockingUserList(Convert.ToInt32(numericUpDown1.Value));
-
-            int threads = Convert.ToInt32(ConfigurationManager.AppSettings.Get("Threads"));
-
-            for (int i = 0; i < threads; i++)
+            BlockingCollection<JObject> users = new BlockingCollection<JObject>();
+            userCount = 0;
+            foreach (var user in userArray)
             {
-                Task deleteUsersTask = Task.Run(() => NonBlockingDeleteUser(blockingUserList));
+                users.Add(user);
+                userCount++;
             }
 
+            users.CompleteAdding();
+            return users;
         }
 
-        private async void DeleteUsers()
+        private void DisplayOpenFileDialog_btn_Click(object sender, EventArgs e)
         {
-            // Get lots of users
-            userlist = UserList(Convert.ToInt32(numericUpDown1.Value));
-
-            var configuration = new Okta.Sdk.Configuration.OktaClientConfiguration
+            if (openFileDialog1.ShowDialog() == DialogResult.OK)
             {
-                OktaDomain = ConfigurationManager.AppSettings.Get("OktaOrgURL"),
-                Token = ConfigurationManager.AppSettings.Get("OktaAPIKey"),
-                MaxRetries = 10,
-                ConnectionTimeout = 5,
-                RequestTimeout = 120
-            };
-            //var client = new OktaClient(config);
+                jsonFilename_textBox.Text = openFileDialog1.FileName;
+            }
+        }
 
-            var httpClient = new System.Net.Http.HttpClient();
-            var maxRetries = configuration.MaxRetries ?? OktaClientConfiguration.DefaultMaxRetries;
-            var requestTimeout = configuration.RequestTimeout ?? OktaClientConfiguration.DefaultRequestTimeout;
+        private void TestDataStop_btn_Click(object sender, EventArgs e)
+        {
+            tokenSource.Cancel();
+            tokenSource.Dispose();
+            resetButtonsAndStopTimer();
+        }
 
-            var client = new OktaClient(apiClientConfiguration: configuration, httpClient: httpClient, logger: this.logger, retryStrategy: new DefaultRetryStrategy(maxRetries, requestTimeout));
+        private void JsonFileStop_btn_Click(object sender, EventArgs e)
+        {
+            tokenSource.Cancel();
+            tokenSource.Dispose();
+            resetButtonsAndStopTimer();
+        }
 
+        private void Form1_Load(object sender, EventArgs e)
+        {
+            oktaOrgURL_txtBox.Text = oktaOrgURL;
+            oktaAPIKey_txtBox.Text = oktaAPIKey;
+            numThreads_upDown.Value = threads;
 
-            foreach (var user in userlist)
+            statusTimer = new System.Windows.Forms.Timer();
+            statusTimer.Tick += new EventHandler(statusTimer_Tick);
+            statusTimer.Interval = 1000; // in miliseconds
+
+        }
+
+        private void updateProgress()
+        {
+            int localUserProcessedCount = Interlocked.CompareExchange(ref userProcessedCount, 0, 0);
+            if (localUserProcessedCount <= userCount)
             {
-                try
-                {
-                    // Get User
-                    var uid = user.Value<JToken>("profile").Value<string>("login");
-                    var u = await client.Users.GetUserAsync(uid);
+                progressBar1.Value = localUserProcessedCount;
 
-                    // First, deactivate the user
-                    await u.DeactivateAsync();
+                double numberOfSecondsElapsed = ((TimeSpan)(DateTime.Now - startTime)).TotalSeconds;
+                double usersPerSecond = localUserProcessedCount / numberOfSecondsElapsed;
+                double usersPerMinute = (numberOfSecondsElapsed < 60) ? (usersPerSecond * 60) : localUserProcessedCount / (numberOfSecondsElapsed / 60);
 
-                    // Then delete the user
-                    await u.DeactivateOrDeleteAsync();
+                progress_Lbl.Text = $"Processed {localUserProcessedCount} / {userCount} @ {usersPerSecond:N2} / sec ({usersPerMinute:N2} / min)";
 
-                    Console.WriteLine($"Login: {u.Profile.Login}, Status: DELETED");
-                    txtBox.AppendText($"Login: {u.Profile.Login}, Status: DELETED {Environment.NewLine}");
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine(ex.Message);
-                    txtBox.AppendText(ex.Message + Environment.NewLine);
-                }
+                string elapsed = string.Format("{0:00}:{1:00}:{2:00}", numberOfSecondsElapsed / 3600, (numberOfSecondsElapsed / 60) % 60, numberOfSecondsElapsed % 60);
+                double etcSeconds = (userCount - localUserProcessedCount) / usersPerSecond;
+                string etc = string.Format("{0:00}:{1:00}:{2:00}", etcSeconds / 3600, (etcSeconds / 60) % 60, etcSeconds % 60);
+
+                etc_Lbl.Text = $"Elapsed {elapsed}, ETC {etc}";
             }
 
+            if (localUserProcessedCount >= userCount)
+            {
+                this.Invoke((MethodInvoker)delegate ()
+                {
+                    statusTimer.Stop();
+
+                    userProcessedCount = 0;
+
+                    Console.WriteLine(progress_Lbl.Text);
+                    txtBoxSuccess.AppendText($"{progress_Lbl.Text} {Environment.NewLine}");
+
+                    testDataStart_btn.Enabled = true;
+                    testDataDelete_btn.Enabled = true;
+                    jsonFileStart_btn.Enabled = true;
+                    jsonFileDelete_btn.Enabled = true;
+                    jsonFileStop_btn.Enabled = false;
+                    testDataStop_btn.Enabled = false;
+                });
+            }
         }
 
-        private void numericUpDown1_ValueChanged(object sender, EventArgs e)
+        private void resetButtonsAndStopTimer()
         {
-            //
+            statusTimer.Stop();
+
+            userProcessedCount = 0;
+
+            Console.WriteLine(progress_Lbl.Text);
+            txtBoxSuccess.AppendText($"{progress_Lbl.Text} {Environment.NewLine}");
+
+            //progressBar1.Value = 0;
+            //progress_Lbl.Text = "";
+            //etc_Lbl.Text = "";
+
+            testDataStart_btn.Enabled = true;
+            testDataDelete_btn.Enabled = true;
+            jsonFileStart_btn.Enabled = true;
+            jsonFileDelete_btn.Enabled = true;
+            jsonFileStop_btn.Enabled = false;
+            testDataStop_btn.Enabled = false;
         }
+
+        private void statusTimer_Tick(object sender, EventArgs e)
+        {
+            this.Invoke((MethodInvoker)delegate ()
+            {
+                updateProgress();
+            });
+        }
+
     }
 }
